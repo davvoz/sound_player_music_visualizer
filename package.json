@@ -1,0 +1,43 @@
+{
+  "name": "aurora-player",
+  "productName": "Aurora Player",
+  "version": "1.0.0",
+  "description": "Media player with audio-reactive visualizations in the style of the classic Windows Media Player",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "icon": "node scripts/make-icon.js",
+    "dist": "node scripts/make-icon.js && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.aurora.player",
+    "productName": "Aurora Player",
+    "files": [
+      "main.js",
+      "preload.js",
+      "assoc.js",
+      "formats.js",
+      "src/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "runAfterFinish": true,
+      "include": "build/installer.nsh"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "music-metadata": "^7.14.0"
+  }
+}

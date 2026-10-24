@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' data: blob:">
+  <title>Aurora Player</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="brand"><img src="assets/icon.png" alt=""><span>Aurora Player</span></div>
+      <div class="top-actions">
+        <button id="btn-open" class="tb-btn" title="Open files (Ctrl+O)">
+          <svg viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2h8.4A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
+          <span>Open</span>
+        </button>
+        <button id="btn-playlist" class="tb-btn" title="Playlist (L)">
+          <svg viewBox="0 0 24 24"><path d="M4 6h12v2H4zm0 5h12v2H4zm0 5h8v2H4zm14-2.8V5h3v2h-1v9.5a2.5 2.5 0 1 1-2-2.3z"/></svg>
+          <span>Playlist</span>
+        </button>
+        <button id="btn-viz-menu" class="tb-btn" title="Visualizations and options (right-click)">
+          <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 2.5 2.5 0 0 1-2.5-2.5V9A6 6 0 0 0 12 3zm-5 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>
+          <span>Visualizations</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="stage">
+      <canvas id="viz"></canvas>
+      <video id="media" preload="auto"></video>
+
+      <div id="info-overlay">
+        <div class="info-title"></div>
+        <div class="info-sub"></div>
+      </div>
+      <div id="toast"></div>
+
+      <div id="empty">
+        <div class="empty-card">
+          <div class="empty-title">Drop music, videos or folders here</div>
+          <div class="empty-sub">or</div>
+          <div class="empty-actions">
+            <button id="empty-open" class="pill">Open files…</button>
+            <button id="empty-folder" class="pill ghost">Open folder…</button>
+          </div>
+          <button id="empty-default" class="link">Set Aurora Player as your default player</button>
+        </div>
+      </div>
+      <div id="drop-hint"><div>Drop to play<br><small>Hold Ctrl to add to the queue</small></div></div>
+
+      <aside id="playlist">
+        <div class="pl-head">
+          <span class="pl-title">Playlist</span>
+          <span id="pl-count"></span>
+          <button id="pl-add" class="mini" title="Add files">+</button>
+          <button id="pl-clear" class="mini" title="Clear playlist">Clear</button>
+        </div>
+        <ol id="pl-list"></ol>
+      </aside>
+    </main>
+
+    <footer id="controls">
+      <div id="seek" title="">
+        <div id="seek-buffer"></div>
+        <div id="seek-fill"></div>
+        <div id="seek-thumb"></div>
+        <div id="seek-tip"></div>
+      </div>
+      <div class="row">
+        <div class="left">
+          <div id="cover-thumb"></div>
+          <div class="meta">
+            <div id="meta-title">No track</div>
+            <div id="meta-artist"></div>
+          </div>
+        </div>
+
+        <div class="center">
+          <button id="btn-shuffle" class="ctl toggle" title="Shuffle">
+            <svg viewBox="0 0 24 24"><path d="M17 4l4 3.5-4 3.5V9h-1.6c-1.1 0-1.8.5-2.5 1.4l-1.2 1.6 1.2 1.6c.7.9 1.4 1.4 2.5 1.4H17v-2l4 3.5-4 3.5v-2h-1.6c-1.8 0-3-.8-4.1-2.2L10.2 14l-1.1 1.4C8 16.8 6.8 17.6 5 17.6H3v-2.2h2c1.1 0 1.8-.5 2.5-1.4L8.8 12 7.5 10.4C6.8 9.5 6.1 9 5 9H3V6.8h2c1.8 0 3 .8 4.1 2.2l1.1 1.4 1.1-1.4c1.1-1.4 2.3-2.2 4.1-2.2H17z"/></svg>
+          </button>
+          <button id="btn-repeat" class="ctl toggle" title="Repeat">
+            <svg viewBox="0 0 24 24"><path d="M7 7h10V4l4 4-4 4V9H7a2 2 0 0 0-2 2v1H3v-1a4 4 0 0 1 4-4zm10 10H7v3l-4-4 4-4v3h10a2 2 0 0 0 2-2v-1h2v1a4 4 0 0 1-4 4z"/></svg>
+            <span id="repeat-one">1</span>
+          </button>
+          <span class="sep"></span>
+          <button id="btn-stop" class="ctl" title="Stop (Ctrl+S)">
+            <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+          </button>
+          <button id="btn-prev" class="ctl" title="Previous (Ctrl+B)">
+            <svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zm3.5 7L19 5v14z"/></svg>
+          </button>
+          <button id="btn-play" class="orb" title="Play (Space)">
+            <svg class="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg>
+            <svg class="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zm6.5 0H17v14h-3.5z"/></svg>
+          </button>
+          <button id="btn-next" class="ctl" title="Next (Ctrl+F)">
+            <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5l9.5 7L5 19z"/></svg>
+          </button>
+          <span class="sep"></span>
+          <button id="btn-mute" class="ctl" title="Mute (M)">
+            <svg class="i-vol" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zm12.5-1.5a6 6 0 0 1 0 9l-1.4-1.4a4 4 0 0 0 0-6.2z"/></svg>
+            <svg class="i-muted" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zm11.6.1 1.4-1.4 2 2 2-2 1.4 1.4-2 2 2 2-1.4 1.4-2-2-2 2-1.4-1.4 2-2z"/></svg>
+          </button>
+          <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8" title="Volume">
+        </div>
+
+        <div class="right">
+          <span id="time">00:00 / 00:00</span>
+          <div class="viz-picker">
+            <button id="viz-prev" class="ctl small" title="Previous visualization (Shift+V)">
+              <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7z"/></svg>
+            </button>
+            <button id="viz-name" title="Choose visualization"></button>
+            <button id="viz-next" class="ctl small" title="Next visualization (V)">
+              <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7z"/></svg>
+            </button>
+          </div>
+          <button id="btn-full" class="ctl" title="Full screen (F11 / double-click)">
+            <svg viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"/></svg>
+          </button>
+        </div>
+      </div>
+    </footer>
+  </div>
+  <script type="module" src="renderer/player.js"></script>
+</body>
+</html>
