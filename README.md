@@ -116,17 +116,18 @@ npm start        # run in development mode
 npm run dist     # build the installer into dist/
 ```
 
-### Publishing a release
+### Releases
 
-Releases are built and published by GitHub Actions
-([.github/workflows/release.yml](.github/workflows/release.yml)):
+Every push to `master` publishes a new release automatically
+([.github/workflows/release.yml](.github/workflows/release.yml)); changes that only touch Markdown files
+or `docs/` are skipped. The version number comes from the commit messages since the last release:
 
-1. Update `version` in `package.json` (e.g. `1.1.0`) and commit.
-2. Tag the commit with the same version and push it:
-   ```
-   git tag v1.1.0
-   git push origin master v1.1.0
-   ```
+| Commit message | Example | New version |
+| --- | --- | --- |
+| `feat!: …` or a `BREAKING CHANGE` footer | `feat!: new playlist format` | 1.4.2 → 2.0.0 |
+| `feat: …` | `feat: add Plenoptic visualizations` | 1.4.2 → 1.5.0 |
+| anything else | `fix: seek bar on long tracks` | 1.4.2 → 1.4.3 |
 
-The workflow builds the installer, attaches it to a new GitHub release with generated release notes,
-and publishes it. Installed copies pick it up on their next launch.
+To force a specific version, set it in `package.json` before pushing. The workflow builds the
+installer, publishes it with generated release notes, and installed copies offer the update on their
+next launch.

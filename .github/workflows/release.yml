@@ -1,13 +1,22 @@
-# Builds the Windows installer and publishes a GitHub release when a version tag (e.g. v1.2.0) is pushed.
+# Publishes a new release automatically on every push to master (docs-only changes excluded).
+# The version is derived from the commit messages since the last release (see scripts/next-version.js).
 # The installed app checks these releases on startup and offers to update.
 name: Release
 
 on:
   push:
-    tags: ['v*']
+    branches: [master]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -19,29 +28,38 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Check that the tag matches package.json
+      - name: Work out the next version
+        id: version
         run: |
-          version=$(node -p "require('./package.json').version")
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
-            exit 1
-          fi
+          version=$(node scripts/next-version.js)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ -z "$version" ]; then echo "No new commits since the last release."; else echo "Releasing $version"; fi
 
       - name: Create draft release with generated notes
+        if: steps.version.outputs.version != ''
         run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
-            gh release create "$GITHUB_REF_NAME" --draft --generate-notes --title "Aurora Player ${GITHUB_REF_NAME#v}"
+          tag="v${{ steps.version.outputs.version }}"
+          gh release view "$tag" >/dev/null 2>&1 ||
+            gh release create "$tag" --draft --generate-notes --target "$GITHUB_SHA" --title "Aurora Player ${{ steps.version.outputs.version }}"
 
-      - run: npm ci
+      - name: Install dependencies
+        if: steps.version.outputs.version != ''
+        run: |
+          npm ci
+          npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Build the installer and upload it to the draft
+        if: steps.version.outputs.version != ''
         run: npm run release
 
       - name: Publish the release
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+        if: steps.version.outputs.version != ''
+        run: gh release edit "v${{ steps.version.outputs.version }}" --draft=false --latest
