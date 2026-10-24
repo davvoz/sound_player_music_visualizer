@@ -16,4 +16,5 @@ contextBridge.exposeInMainWorld('api', {
   onFiles: (cb) => ipcRenderer.on('files:open', (_e, files, append) => cb(files, append)),
   onFullscreen: (cb) => ipcRenderer.on('win:fullscreen', (_e, on) => cb(on)),
   onMenu: (cb) => ipcRenderer.on('menu:command', (_e, cmd, arg) => cb(cmd, arg)),
+  onToast: (cb) => ipcRenderer.on('app:toast', (_e, text) => cb(text)),
 });

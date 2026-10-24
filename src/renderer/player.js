@@ -469,6 +469,7 @@ api.onMenu((cmd, arg) => {
 
 api.onFiles((files, append) => addFiles(files, { append }));
 api.onFullscreen((on) => appEl.classList.toggle('fullscreen', on));
+api.onToast((text) => toast(text, 3500));
 
 // ---------------------------------------------------------------- UI wiring
 

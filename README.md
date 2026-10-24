@@ -3,9 +3,30 @@
 A music and video player for Windows that brings back the audio-reactive visualizations of the
 classic Windows Media Player.
 
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20installer-1d78d6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/davvoz/sound_player_music_visualizer/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/davvoz/sound_player_music_visualizer?style=for-the-badge&label=version)](https://github.com/davvoz/sound_player_music_visualizer/releases)
+
+![Aurora Player playing the Ambience: Anon visualization](docs/screenshots/hero.jpg)
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/ambience-water.jpg" alt="Ambience: Water"><br><sub>Ambience: Water</sub></td>
+    <td><img src="docs/screenshots/battery-kaleidovision.jpg" alt="Battery: Kaleidovision"><br><sub>Battery: Kaleidovision</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/fire-storm.jpg" alt="Bars and Waves: Fire Storm"><br><sub>Bars and Waves: Fire Storm</sub></td>
+    <td><img src="docs/screenshots/ocean-mist.jpg" alt="Bars and Waves: Ocean Mist"><br><sub>Bars and Waves: Ocean Mist</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/battery-freaky-circles.jpg" alt="Battery: Dance of the Freaky Circles"><br><sub>Battery: Dance of the Freaky Circles</sub></td>
+    <td><img src="docs/screenshots/bars.jpg" alt="Bars and Waves: Bars"><br><sub>Bars and Waves: Bars</sub></td>
+  </tr>
+</table>
+
 ## Installation
 
-1. Run **Aurora Player Setup 1.0.0.exe**.
+1. Download **Aurora-Player-Setup-x.y.z.exe** from the
+   [latest release](https://github.com/davvoz/sound_player_music_visualizer/releases/latest) and run it.
    The installer is not digitally signed, so Windows SmartScreen may show a warning:
    choose **More info › Run anyway**.
 2. On first launch, Aurora Player asks whether it should become your default player.
@@ -13,6 +34,13 @@ classic Windows Media Player.
 
 Windows requires you to confirm this step yourself. You can do it later at any time:
 right-click inside the player and choose **Set as default player…**.
+
+## Updates
+
+Aurora Player checks for a new version every time it starts. When one is available it shows what's
+new and asks whether to download it; once downloaded, you can restart right away or let the update
+install when you close the player. You can also check manually: right-click inside the player and
+choose **Check for updates…**.
 
 ## Playing media
 
@@ -87,3 +115,18 @@ npm install
 npm start        # run in development mode
 npm run dist     # build the installer into dist/
 ```
+
+### Publishing a release
+
+Releases are built and published by GitHub Actions
+([.github/workflows/release.yml](.github/workflows/release.yml)):
+
+1. Update `version` in `package.json` (e.g. `1.1.0`) and commit.
+2. Tag the commit with the same version and push it:
+   ```
+   git tag v1.1.0
+   git push origin master v1.1.0
+   ```
+
+The workflow builds the installer, attaches it to a new GitHub release with generated release notes,
+and publishes it. Installed copies pick it up on their next launch.

@@ -5,6 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { Readable } = require('node:stream');
 const assoc = require('./assoc');
+const updater = require('./updater');
 const { AUDIO_EXT, VIDEO_EXT, PLAYLIST_EXT, IMAGE_EXT, MIME, extOf } = require('./formats');
 
 const MEDIA_EXT = new Set([...AUDIO_EXT, ...VIDEO_EXT]);
@@ -353,6 +354,9 @@ function registerIpc() {
       { type: 'separator' },
       { label: 'Set as default player...', click: () => setAsDefault(true) },
       { label: 'Remove file associations', click: () => removeAssociations() },
+      { type: 'separator' },
+      { label: 'Check for updates...', click: () => updater.check(true) },
+      { label: `Aurora Player ${app.getVersion()}`, enabled: false },
     ];
     Menu.buildFromTemplate(template).popup({ window: win });
   });
@@ -367,6 +371,7 @@ async function start() {
   registerProtocol();
   registerIpc();
   createWindow();
+  updater.init(win, { read: readSettings, write: writeSettings });
   handleArgv(process.argv);
 
   if (app.isPackaged) {
@@ -375,6 +380,10 @@ async function start() {
     if (!s.assocRemoved && (s.registeredExe !== process.execPath || s.assocVersion !== assoc.VERSION)) {
       assoc.register().then(() => writeSettings({ registeredExe: process.execPath, assocVersion: assoc.VERSION })).catch(() => {});
     }
-    win.webContents.once('did-finish-load', () => setTimeout(askDefaultOnFirstRun, 800));
+    // One dialog at a time: the first-run question, then the update check.
+    win.webContents.once('did-finish-load', () => setTimeout(async () => {
+      await askDefaultOnFirstRun();
+      updater.check(false);
+    }, 800));
   }
 }
