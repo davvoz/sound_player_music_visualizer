@@ -4,24 +4,30 @@
 const BANDS = 64;
 const WAVE = 512;
 
+function makeAnalyser(ctx) {
+  const a = ctx.createAnalyser();
+  a.fftSize = 2048;
+  a.smoothingTimeConstant = 0.7;
+  a.minDecibels = -88;
+  a.maxDecibels = -22;
+  return a;
+}
+
 export class AudioEngine {
   constructor(mediaEl) {
     this.ctx = new AudioContext({ latencyHint: 'playback' });
     this.source = this.ctx.createMediaElementSource(mediaEl);
-    this.analyser = this.ctx.createAnalyser();
-    this.analyser.fftSize = 2048;
-    this.analyser.smoothingTimeConstant = 0.7;
-    this.analyser.minDecibels = -88;
-    this.analyser.maxDecibels = -22;
+    this.fileAnalyser = makeAnalyser(this.ctx);
     // Volume is applied after the analyser, so visualizations react the same at any volume.
     this.gain = this.ctx.createGain();
-    this.source.connect(this.analyser);
-    this.analyser.connect(this.gain);
+    this.source.connect(this.fileAnalyser);
+    this.fileAnalyser.connect(this.gain);
     this.gain.connect(this.ctx.destination);
 
-    this.freqBytes = new Uint8Array(this.analyser.frequencyBinCount);
-    this.timeData = new Float32Array(this.analyser.fftSize);
-    this.bandEdges = this.#computeEdges();
+    this.live = null;
+    this.onLiveEnded = null;
+    this.timeData = new Float32Array(this.fileAnalyser.fftSize);
+    this.#use(this.fileAnalyser);
 
     this.history = new Float32Array(48);
     this.histPos = 0;
@@ -36,15 +42,50 @@ export class AudioEngine {
     };
   }
 
-  #computeEdges() {
-    const binHz = this.ctx.sampleRate / this.analyser.fftSize;
-    const maxBin = this.analyser.frequencyBinCount - 1;
-    const edges = [];
+  #use(analyser) {
+    this.analyser = analyser;
+    this.freqBytes = new Uint8Array(analyser.frequencyBinCount);
+    const binHz = analyser.context.sampleRate / analyser.fftSize;
+    const maxBin = analyser.frequencyBinCount - 1;
+    this.bandEdges = [];
     for (let i = 0; i <= BANDS; i++) {
       const f = 32 * Math.pow(16000 / 32, i / BANDS);
-      edges.push(Math.min(maxBin, Math.max(1, Math.round(f / binHz))));
+      this.bandEdges.push(Math.min(maxBin, Math.max(1, Math.round(f / binHz))));
     }
-    return edges;
+  }
+
+  get isLive() {
+    return this.live !== null;
+  }
+
+  // Analyses whatever Windows is playing (WASAPI loopback, granted by the main process).
+  // The capture has its own low-latency context that never reaches the speakers:
+  // playing it back would feed it into the loopback again.
+  async startLive() {
+    if (this.live) return;
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    // the screen capture is only the carrier of the loopback audio
+    for (const t of stream.getVideoTracks()) { t.stop(); stream.removeTrack(t); }
+    const track = stream.getAudioTracks()[0];
+    if (!track) throw new Error('No system audio track');
+    const ctx = new AudioContext({ latencyHint: 'interactive' });
+    const analyser = makeAnalyser(ctx);
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    this.live = { ctx, stream };
+    track.addEventListener('ended', () => {
+      if (this.live?.stream !== stream) return;
+      this.stopLive();
+      this.onLiveEnded?.();
+    });
+    this.#use(analyser);
+  }
+
+  stopLive() {
+    if (!this.live) return;
+    for (const t of this.live.stream.getTracks()) t.stop();
+    this.live.ctx.close();
+    this.live = null;
+    this.#use(this.fileAnalyser);
   }
 
   setVolume(v) {

@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, protocol, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, Menu, shell, session, desktopCapturer } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { Readable } = require('node:stream');
@@ -12,6 +12,7 @@ const MEDIA_EXT = new Set([...AUDIO_EXT, ...VIDEO_EXT]);
 const SERVABLE_EXT = new Set([...AUDIO_EXT, ...VIDEO_EXT, ...IMAGE_EXT]);
 const UI_ROOT = path.join(__dirname, 'src');
 const SETTINGS_FILE = () => path.join(app.getPath('userData'), 'settings.json');
+const LOGO_EXT = ['png', 'webp', 'svg', 'gif', 'jpg', 'jpeg'];
 
 // Files opened from File Explorer must start playing immediately, without a click.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -50,6 +51,22 @@ function readSettings() {
 function writeSettings(patch) {
   const s = { ...readSettings(), ...patch };
   try { fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(s, null, 2)); } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------- logo
+
+// The user's logo is copied into the profile, so it survives the original file being moved.
+const logoPath = (ext) => path.join(app.getPath('userData'), `logo.${ext}`);
+
+function logoFile() {
+  for (const ext of LOGO_EXT) if (fs.existsSync(logoPath(ext))) return logoPath(ext);
+  return null;
+}
+
+function removeLogo() {
+  for (const ext of LOGO_EXT) {
+    try { fs.rmSync(logoPath(ext), { force: true }); } catch { /* ignore */ }
+  }
 }
 
 // ---------------------------------------------------------------- incoming files
@@ -166,11 +183,27 @@ function registerProtocol() {
       if (!path.isAbsolute(file) || !SERVABLE_EXT.has(extOf(file))) return new Response('Forbidden', { status: 403 });
       return serveFile(request, file);
     }
+    if (url.pathname === '/logo') {
+      const file = logoFile();
+      return file ? serveFile(request, file) : new Response('Not found', { status: 404 });
+    }
     let rel = decodeURIComponent(url.pathname);
     if (rel === '/' || rel === '') rel = '/index.html';
     const file = path.normalize(path.join(UI_ROOT, rel));
     if (!file.startsWith(UI_ROOT + path.sep)) return new Response('Forbidden', { status: 403 });
     return serveFile(request, file);
+  });
+}
+
+// ---------------------------------------------------------------- system audio
+
+// getDisplayMedia() in the renderer is answered with the system audio (WASAPI loopback),
+// without a picker. Chromium needs a video source too: the renderer discards it.
+function registerLoopback() {
+  session.defaultSession.setDisplayMediaRequestHandler((_req, callback) => {
+    desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
+      .then((sources) => callback(sources.length ? { video: sources[0], audio: 'loopback' } : {}))
+      .catch(() => callback({}));
   });
 }
 
@@ -315,6 +348,24 @@ function registerIpc() {
     return info;
   });
 
+  ipcMain.handle('logo:get', () => !!logoFile());
+
+  ipcMain.handle('logo:choose', async () => {
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Choose your logo (a PNG with a transparent background works best)',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: LOGO_EXT }],
+    });
+    const src = res.canceled ? null : res.filePaths[0];
+    if (!src || !LOGO_EXT.includes(extOf(src))) return false;
+    const data = await fs.promises.readFile(src);
+    removeLogo();
+    await fs.promises.writeFile(logoPath(extOf(src)), data);
+    return true;
+  });
+
+  ipcMain.handle('logo:remove', () => removeLogo());
+
   ipcMain.on('win:fullscreen', () => win && win.setFullScreen(!win.isFullScreen()));
   ipcMain.on('win:exit-fullscreen', () => win && win.isFullScreen() && win.setFullScreen(false));
   ipcMain.on('win:title', (_e, title) => win && win.setTitle(title));
@@ -339,6 +390,20 @@ function registerIpc() {
       { label: 'Next visualization', accelerator: 'V', click: () => send('viz-next') },
       { label: 'Previous visualization', accelerator: 'Shift+V', click: () => send('viz-prev') },
       { label: 'Change visualization every track', type: 'checkbox', checked: d.vizPerTrack, click: () => send('viz-per-track') },
+      { label: 'Visualize system audio', type: 'checkbox', checked: d.live, accelerator: 'A', click: () => send('live') },
+      {
+        label: 'Logo',
+        submenu: [
+          { label: d.logo.has ? 'Change logo...' : 'Load logo...', click: () => send('logo-load') },
+          { label: 'Show logo', type: 'checkbox', checked: d.logo.show, enabled: d.logo.has, accelerator: 'G', click: () => send('logo-show') },
+          { type: 'separator' },
+          ...[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']].map(([v, l]) => ({
+            label: l, type: 'radio', checked: d.logo.size === v, enabled: d.logo.has, click: () => send('logo-size', v),
+          })),
+          { type: 'separator' },
+          { label: 'Remove logo', enabled: d.logo.has, click: () => send('logo-remove') },
+        ],
+      },
       { type: 'separator' },
       { label: 'Open files...', accelerator: 'Ctrl+O', click: () => send('open') },
       { label: 'Open folder...', click: () => send('open-folder') },
@@ -369,6 +434,7 @@ function registerIpc() {
 async function start() {
   Menu.setApplicationMenu(null);
   registerProtocol();
+  registerLoopback();
   registerIpc();
   createWindow();
   updater.init(win, { read: readSettings, write: writeSettings });

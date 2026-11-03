@@ -120,6 +120,11 @@ function setCover(src) {
   viz?.setTrack({ cover: img });
 }
 
+function loadCover(it) {
+  setCover(null);
+  api.metadata(it.path).then((m) => { if (it === current() && m && !audio.isLive) setCover(m.cover); }).catch(() => {});
+}
+
 // ---------------------------------------------------------------- playlist
 
 function addFiles(paths, { append = false } = {}) {
@@ -251,9 +256,8 @@ function playIndex(i, { autoplay = true } = {}) {
   }
   if (state.vizPerTrack && viz) randomViz();
 
-  setCover(null);
   ensureMeta(it).then(() => { if (it === current()) showInfoOverlay(); });
-  api.metadata(it.path).then((m) => { if (it === current() && m) setCover(m.cover); }).catch(() => {});
+  loadCover(it);
   updateNowPlaying();
   highlightCurrent();
   showInfoOverlay();
@@ -301,12 +305,14 @@ function prev() {
 }
 
 function stop() {
+  stopLive();
   media.pause();
   if (media.src) media.currentTime = 0;
   appEl.classList.remove('playing');
 }
 
 function togglePlay() {
+  if (audio.isLive) { stopLive(); return; }
   if (!state.items.length) { openFiles(); return; }
   if (state.index < 0) { playIndex(0); return; }
   if (media.paused) {
@@ -322,6 +328,13 @@ function seekBy(sec) {
 }
 
 function updateNowPlaying() {
+  if (audio.isLive) {
+    $('#meta-title').textContent = 'System audio';
+    $('#meta-artist').textContent = 'Everything playing on this PC';
+    api.setTitle('System audio - Aurora Player');
+    viz?.setTrack({ title: 'System audio', artist: '', album: '' });
+    return;
+  }
   const it = current();
   if (!it) {
     $('#meta-title').textContent = 'No track';
@@ -346,7 +359,10 @@ media.addEventListener('playing', () => {
   const it = current();
   if (it?.error) { it.error = false; updateRow(it); }
 });
-media.addEventListener('play', () => appEl.classList.add('playing'));
+media.addEventListener('play', () => {
+  stopLive();
+  appEl.classList.add('playing');
+});
 media.addEventListener('pause', () => appEl.classList.remove('playing'));
 media.addEventListener('ended', () => next(true));
 media.addEventListener('error', () => {
@@ -359,6 +375,98 @@ media.addEventListener('error', () => {
   if (state.errorsInRow < state.items.length) setTimeout(() => next(true), 700);
   else stop();
 });
+
+// ---------------------------------------------------------------- system audio
+
+let liveStarting = false;
+
+async function startLive() {
+  if (audio.isLive || liveStarting) return;
+  liveStarting = true;
+  media.pause();
+  try {
+    await audio.startLive();
+  } catch (err) {
+    console.error(err);
+    toast("Can't capture the system audio", 3500);
+    return;
+  } finally {
+    liveStarting = false;
+  }
+  appEl.classList.add('live');
+  appEl.classList.remove('video');
+  $('#btn-live').classList.add('active');
+  setCover(null);
+  updateNowPlaying();
+  toast('Visualizing system audio');
+}
+
+function stopLive() {
+  if (!audio.isLive) return;
+  audio.stopLive();
+  liveEnded();
+}
+
+function liveEnded() {
+  appEl.classList.remove('live');
+  appEl.classList.toggle('video', media.videoWidth > 0);
+  $('#btn-live').classList.remove('active');
+  if (current()) loadCover(current());
+  updateNowPlaying();
+}
+
+audio.onLiveEnded = liveEnded;
+
+const toggleLive = () => (audio.isLive ? stopLive() : startLive());
+
+// ---------------------------------------------------------------- logo
+
+const logo = { has: false, show: store.get('logo.show', true), size: store.get('logo.size', 'medium') };
+
+async function loadLogo() {
+  logo.has = await api.hasLogo();
+  if (!logo.has) { viz?.setLogo(null); return false; }
+  const img = new Image();
+  img.src = `app://local/logo?v=${Date.now()}`;
+  try {
+    await img.decode();
+  } catch {
+    logo.has = false;
+    viz?.setLogo(null);
+    return false;
+  }
+  viz?.setLogo(img);
+  return true;
+}
+
+function setLogoOptions(opts) {
+  Object.assign(logo, opts);
+  store.set('logo.show', logo.show);
+  store.set('logo.size', logo.size);
+  viz?.setLogoOptions({ visible: logo.show, size: logo.size });
+}
+
+async function chooseLogo() {
+  if (!(await api.chooseLogo())) return;
+  if (await loadLogo()) {
+    setLogoOptions({ show: true });
+    toast('Logo loaded');
+  } else {
+    toast("Can't read that image", 3500);
+  }
+}
+
+async function removeLogo() {
+  await api.removeLogo();
+  await loadLogo();
+  toast('Logo removed');
+}
+
+function toggleLogo() {
+  if (!logo.has) { chooseLogo(); return; }
+  setLogoOptions({ show: !logo.show });
+  toast(logo.show ? 'Logo on' : 'Logo off');
+}
 
 // ---------------------------------------------------------------- visualizations
 
@@ -392,6 +500,8 @@ function showMenu() {
     repeat: state.repeat,
     playlist: appEl.classList.contains('show-playlist'),
     vizPerTrack: state.vizPerTrack,
+    live: audio.isLive,
+    logo: { has: logo.has, show: logo.show, size: logo.size },
   });
 }
 
@@ -460,6 +570,11 @@ api.onMenu((cmd, arg) => {
     case 'open': openFiles(); break;
     case 'open-folder': openFiles(true); break;
     case 'playlist': togglePlaylist(); break;
+    case 'live': toggleLive(); break;
+    case 'logo-load': chooseLogo(); break;
+    case 'logo-show': toggleLogo(); break;
+    case 'logo-size': setLogoOptions({ size: arg }); break;
+    case 'logo-remove': removeLogo(); break;
     case 'fullscreen': api.toggleFullscreen(); break;
     case 'shuffle': setShuffle(!state.shuffle); break;
     case 'repeat': setRepeat(arg); break;
@@ -491,12 +606,14 @@ on('#volume', 'wheel', (e) => { e.preventDefault(); setVolume(state.volume + (e.
 on('#btn-full', 'click', () => api.toggleFullscreen());
 on('#btn-open', 'click', () => openFiles());
 on('#btn-playlist', 'click', () => togglePlaylist());
+on('#btn-live', 'click', toggleLive);
 on('#btn-viz-menu', 'click', showMenu);
 on('#viz-name', 'click', showMenu);
 on('#viz-prev', 'click', () => stepViz(-1));
 on('#viz-next', 'click', () => stepViz(1));
 on('#empty-open', 'click', () => openFiles());
 on('#empty-folder', 'click', () => openFiles(true));
+on('#empty-live', 'click', startLive);
 on('#empty-default', 'click', () => api.setDefault());
 on('#pl-add', 'click', async () => addFiles(await api.openDialog(false), { append: true }));
 on('#pl-clear', 'click', clearPlaylist);
@@ -617,6 +734,8 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'v') stepViz(e.shiftKey ? -1 : 1);
   else if (k === 'm') toggleMute();
   else if (k === 'l') togglePlaylist();
+  else if (k === 'a' && !ctrl) toggleLive();
+  else if (k === 'g' && !ctrl) toggleLogo();
   else if (k === 'Delete' && state.selected >= 0) removeIndex(state.selected);
   else return;
   e.preventDefault();
@@ -628,7 +747,7 @@ const wake = () => {
   appEl.classList.remove('idle');
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    if (appEl.classList.contains('fullscreen') && !media.paused && !$('#controls').matches(':hover')) appEl.classList.add('idle');
+    if (appEl.classList.contains('fullscreen') && (!media.paused || audio.isLive) && !$('#controls').matches(':hover')) appEl.classList.add('idle');
   }, 2500);
 };
 window.addEventListener('mousemove', wake);
@@ -648,7 +767,7 @@ function updateTime() {
   }
   const buffered = ok && media.buffered.length ? media.buffered.end(media.buffered.length - 1) / dur : 0;
   $('#seek-buffer').style.width = `${buffered * 100}%`;
-  const t = `${fmt(cur)} / ${ok ? fmt(dur) : '00:00'}`;
+  const t = audio.isLive ? 'LIVE' : `${fmt(cur)} / ${ok ? fmt(dur) : '00:00'}`;
   if (t !== lastTime) { $('#time').textContent = t; lastTime = t; }
 }
 
@@ -670,6 +789,8 @@ setVolume(state.volume);
 if (viz) setViz(viz.current.id, false);
 else $('#viz-name').textContent = 'Visualizations unavailable (WebGL2)';
 togglePlaylist(store.get('playlist', false));
+setLogoOptions({});
+loadLogo();
 renderPlaylist();
 updateNowPlaying();
 requestAnimationFrame(frame);

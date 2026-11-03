@@ -8,6 +8,20 @@ in vec2 aPos;
 out vec2 vUv;
 void main() { vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
+// The user's logo, centred, in a box sized on the shorter side of the screen.
+// The texture carries transparent padding and mipmaps: higher LODs give its blurred silhouette.
+const LOGO = `
+uniform sampler2D uLogo;
+uniform float uLogoOn, uLogoAspect, uLogoSize, uLogoScale;
+vec4 logoAt(vec2 uv, float lod) {
+  float aspect = uRes.x / uRes.y;
+  float m = uLogoSize * uLogoScale * min(aspect, 1.0);
+  vec2 box = uLogoAspect >= 1.0 ? vec2(m, m / uLogoAspect) : vec2(m * uLogoAspect, m);
+  vec2 q = (uv - 0.5) * vec2(aspect, 1.0) / box + 0.5;
+  if (q.x < 0.0 || q.y < 0.0 || q.x > 1.0 || q.y > 1.0) return vec4(0.0);
+  return textureLod(uLogo, q, lod);
+}`;
+
 const WARP = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -19,6 +33,8 @@ uniform float uTime, uZoom, uRot, uTwirl, uRippleAmp, uRippleFreq, uRippleSpeed;
 uniform float uNoiseAmp, uNoiseScale, uDecay, uHue, uBlur, uEdge, uAdd, uFloor, uPush;
 uniform vec2 uShift, uCenter;
 uniform vec3 uTint;
+uniform float uLogoEmit, uLogoLens;
+${LOGO}
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
@@ -47,6 +63,13 @@ void main() {
   p += (vec2(noise(p * uNoiseScale + uTime * 0.6), noise(p * uNoiseScale + 17.3 - uTime * 0.6)) - 0.5) * uNoiseAmp;
   p -= uShift;
   vec2 uv = p / vec2(aspect, 1.0) + 0.5 + uCenter;
+  if (uLogoOn > 0.5) {
+    // the logo acts as a lens: the flow slides along its blurred silhouette
+    vec2 e = vec2(0.012 / aspect, 0.012);
+    vec2 g = vec2(logoAt(vUv + vec2(e.x, 0.0), 4.0).a - logoAt(vUv - vec2(e.x, 0.0), 4.0).a,
+                  logoAt(vUv + vec2(0.0, e.y), 4.0).a - logoAt(vUv - vec2(0.0, e.y), 4.0).a);
+    uv += g * uLogoLens;
+  }
 
   vec3 c = texture(uPrev, uv).rgb;
   if (uBlur > 0.0) {
@@ -62,6 +85,14 @@ void main() {
 
   vec4 ov = texture(uOverlay, vUv);
   c = mix(c * (1.0 - ov.a) + ov.rgb, c + ov.rgb, uAdd);
+  // echoes: the logo's outline is stamped into the feedback, then the preset's own motion carries it away
+  if (uLogoOn > 0.5) {
+    float sharp = logoAt(vUv, 0.0).a;
+    vec4 soft = logoAt(vUv, 4.0);
+    float rim = clamp((soft.a - sharp) * 4.0, 0.0, 1.0);
+    vec3 tone = mix(soft.rgb / max(soft.a, 1e-3), vec3(1.0), 0.4);
+    c += tone * rim * uLogoEmit;
+  }
   outColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 
@@ -72,6 +103,8 @@ out vec4 outColor;
 uniform sampler2D uTex;
 uniform vec2 uRes;
 uniform float uKaleido, uKRot, uMirror;
+uniform float uLogoSplit, uLogoGlow, uLogoOpacity;
+${LOGO}
 void main() {
   vec2 uv = vUv;
   if (uKaleido > 0.5) {
@@ -84,8 +117,26 @@ void main() {
     uv = vec2(cos(a), sin(a)) * r / vec2(aspect, 1.0) + 0.5;
   }
   if (uMirror > 0.5) uv.x = 0.5 - abs(uv.x - 0.5);
-  outColor = vec4(texture(uTex, uv).rgb, 1.0);
+  vec3 col = texture(uTex, uv).rgb;
+  if (uLogoOn > 0.5) {
+    // halo around the silhouette, coloured by the visualization underneath
+    vec4 lg = logoAt(vUv, 0.0);
+    float halo = max(logoAt(vUv, 3.5).a - lg.a, 0.0);
+    col += halo * uLogoGlow * (col * 1.5 + 0.08);
+    // inside its silhouette the logo is a window on the visualization: the effects show through
+    // amplified, screen-blended with the logo's colours; RGB split on the beat
+    vec2 sp = vec2(uLogoSplit, 0.0);
+    vec4 lr = logoAt(vUv + sp, 0.0);
+    vec4 lb = logoAt(vUv - sp, 0.0);
+    float lum = dot(col, vec3(0.299, 0.587, 0.114));
+    vec3 lit = vec3(lr.r, lg.g, lb.b) * (0.55 + lum * 0.8);
+    vec3 inside = 1.0 - (1.0 - clamp(col * 1.4, 0.0, 1.0)) * (1.0 - clamp(lit, 0.0, 1.0));
+    col = mix(col, inside, vec3(lr.a, lg.a, lb.a) * uLogoOpacity);
+  }
+  outColor = vec4(col, 1.0);
 }`;
+
+const LOGO_SIZES = { small: 0.34, medium: 0.5, large: 0.68 };
 
 export const DEFAULT_PARAMS = {
   zoom: 1, rot: 0, twirl: 0, push: 0,
@@ -126,6 +177,10 @@ export class Visualizer {
     }
 
     this.overlayTex = this.#texture(gl.CLAMP_TO_EDGE);
+    this.logoTex = this.#texture(gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    this.logo = null;
+    this.logoOpts = { visible: true, size: 'medium' };
     this.targets = [];
     this.w = 0;
     this.h = 0;
@@ -229,6 +284,45 @@ export class Visualizer {
     Object.assign(this.env, info);
   }
 
+  // img: a loaded image (transparent PNG/SVG work best), or null to drop the logo
+  setLogo(img) {
+    if (!img) { this.logo = null; return; }
+    const iw = img.naturalWidth || 1024;
+    const ih = img.naturalHeight || 1024;
+    const s = 1024 / Math.max(iw, ih);
+    const pad = Math.round(1024 * 0.15); // room for the blurred silhouette (halo and lens)
+    const c = document.createElement('canvas');
+    c.width = Math.round(iw * s) + pad * 2;
+    c.height = Math.round(ih * s) + pad * 2;
+    c.getContext('2d').drawImage(img, pad, pad, c.width - pad * 2, c.height - pad * 2);
+
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.logoTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    this.logo = { aspect: c.width / c.height };
+  }
+
+  setLogoOptions(opts) {
+    Object.assign(this.logoOpts, opts);
+  }
+
+  #logoUniforms(u, unit, scale) {
+    const gl = this.gl;
+    const on = this.logo && this.logoOpts.visible && !this.preset.noLogo;
+    gl.uniform1f(u.uLogoOn, on ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, this.logoTex);
+    gl.uniform1i(u.uLogo, unit);
+    if (!on) return;
+    gl.uniform1f(u.uLogoAspect, this.logo.aspect);
+    gl.uniform1f(u.uLogoSize, LOGO_SIZES[this.logoOpts.size] || LOGO_SIZES.medium);
+    gl.uniform1f(u.uLogoScale, scale);
+  }
+
   render(a) {
     if (this.#resize()) this.preset.init?.(this.state, this.w, this.h);
     const gl = this.gl;
@@ -281,6 +375,11 @@ export class Visualizer {
     gl.uniform1f(u.uEdge, P.edge);
     gl.uniform1f(u.uAdd, P.add);
     gl.uniform1f(u.uFloor, (this.floatFB ? 0.0015 : 0.004) * k);
+    // the logo breathes with the bass, kicks on the beat and bends the flow harder on loud bass
+    const logoScale = 1 + a.bass * 0.12 + a.pulse * 0.08;
+    this.#logoUniforms(u, 2, logoScale);
+    gl.uniform1f(u.uLogoEmit, (a.beat ? 0.7 : 0) + a.vol * 0.012 * k);
+    gl.uniform1f(u.uLogoLens, (0.002 + a.bass * 0.01) * k);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     // screen pass
@@ -295,6 +394,10 @@ export class Visualizer {
     gl.uniform1f(d.u.uKaleido, P.kaleido);
     gl.uniform1f(d.u.uKRot, P.krot);
     gl.uniform1f(d.u.uMirror, P.mirror);
+    this.#logoUniforms(d.u, 1, logoScale);
+    gl.uniform1f(d.u.uLogoSplit, a.pulse * 0.01);
+    gl.uniform1f(d.u.uLogoGlow, 0.35 + a.bass * 1.4);
+    gl.uniform1f(d.u.uLogoOpacity, 0.9);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     this.src = 1 - this.src;

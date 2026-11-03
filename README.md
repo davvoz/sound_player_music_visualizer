@@ -73,6 +73,21 @@ the right-click menu.
 These are faithful recreations of the original Windows Media Player effects, not the original
 Microsoft plug-ins.
 
+### System audio
+
+**System audio** in the top bar (or the **A** key) visualizes whatever is playing on the PC —
+Spotify, a browser, a game — instead of the player's own tracks. Press it again, or play a track,
+to go back. The visualizations follow the level Windows plays at, so very low system volume means
+calmer visuals.
+
+### Your logo
+
+Right-click → **Logo** → **Load logo…** puts your own logo at the centre of every visualization.
+It is part of the effects rather than a sticker on top: the visuals bend around its outline and
+show through it, its outline is thrown into the visualization on every beat, and it glows and
+kicks with the bass. A PNG or SVG with a transparent background works best. The same menu sets the
+size and removes it; **G** shows or hides it.
+
 ## Keyboard shortcuts
 
 | Key | Action |
@@ -86,6 +101,8 @@ Microsoft plug-ins.
 | M | Mute |
 | V / Shift+V | Next / previous visualization |
 | L | Show or hide the playlist |
+| A | Visualize system audio on / off |
+| G | Show or hide your logo |
 | F11, Alt+Enter, double-click | Full screen |
 | Esc | Exit full screen |
 | Delete | Remove the selected track from the playlist |

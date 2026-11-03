@@ -198,7 +198,7 @@ const alchemy = {
 // ---------------------------------------------------------------- Album Art
 
 const albumArt = {
-  id: 'album-art', group: 'Album Art', name: 'Album Cover',
+  id: 'album-art', group: 'Album Art', name: 'Album Cover', noLogo: true,
   draw(ctx, a, s, w, h, env) {
     const m = Math.min(w, h);
     const bg = ctx.createRadialGradient(w / 2, h * 0.42, 0, w / 2, h / 2, Math.max(w, h) * 0.75);

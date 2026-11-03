@@ -153,6 +153,10 @@ svg { fill: currentColor; }
 
 #app.empty #empty { display: flex; }
 
+/* system audio: the visualization runs on its own, with no media to show or seek */
+#app.live #empty { display: none; }
+#app.live #seek { visibility: hidden; }
+
 .empty-card {
   text-align: center;
   padding: 28px 36px;
@@ -185,6 +189,9 @@ svg { fill: currentColor; }
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+.empty-card .link { display: block; margin-inline: auto; }
+.empty-card .link + .link { margin-top: 8px; }
 
 #drop-hint {
   position: absolute;
@@ -453,6 +460,8 @@ svg { fill: currentColor; }
 .orb:active { filter: brightness(0.95); }
 .orb .i-pause, #app.playing .orb .i-play { display: none; }
 #app.playing .orb .i-pause { display: block; }
+#app.live .orb .i-play { display: none; }
+#app.live .orb .i-pause { display: block; }
 
 .i-muted, #app.muted .i-vol { display: none; }
 #app.muted .i-muted { display: block; }
